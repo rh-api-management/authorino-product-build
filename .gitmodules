@@ -1,0 +1,4 @@
+[submodule "authorino"]
+	path = authorino
+	url = https://github.com/Kuadrant/authorino
+	branch = main
