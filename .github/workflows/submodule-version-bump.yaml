@@ -21,12 +21,6 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch all tags from submodule
         run: |
@@ -57,44 +51,24 @@ jobs:
           echo "Latest version: $LATEST_TAG"
           cd ..
 
-      - name: Compare versions
+      - name: Compare versions with semver
         id: compare
-        run: |
-          CURRENT="${{ steps.current_version.outputs.tag }}"
-          LATEST="${{ steps.latest_version.outputs.tag }}"
-
-          # Remove 'v' prefix for comparison
-          CURRENT_NUM=${CURRENT#v}
-          LATEST_NUM=${LATEST#v}
-
-          echo "Comparing $CURRENT_NUM with $LATEST_NUM"
-
-          if [ "$CURRENT" = "$LATEST" ]; then
-            echo "needs_update=false" >> $GITHUB_OUTPUT
-            echo "No update needed - already on latest version"
-          else
-            # Simple version comparison using sort -V
-            NEWER=$(printf "%s\n%s" "$CURRENT_NUM" "$LATEST_NUM" | sort -V | tail -n 1)
-            if [ "$NEWER" = "$LATEST_NUM" ] && [ "$CURRENT_NUM" != "$LATEST_NUM" ]; then
-              echo "needs_update=true" >> $GITHUB_OUTPUT
-              echo "Update needed: $CURRENT -> $LATEST"
-            else
-              echo "needs_update=false" >> $GITHUB_OUTPUT
-              echo "Current version is newer or equal"
-            fi
-          fi
+        uses: madhead/semver-utils@latest
+        with:
+          version: ${{ steps.latest_version.outputs.tag }}
+          compare-to: ${{ steps.current_version.outputs.tag }}
 
       - name: Update submodule to latest tag
-        if: steps.compare.outputs.needs_update == 'true'
+        if: steps.compare.outputs.comparison-result == '>'
         run: |
           LATEST_TAG="${{ steps.latest_version.outputs.tag }}"
+          echo "Updating from ${{ steps.current_version.outputs.tag }} to $LATEST_TAG"
           cd authorino
           git checkout "$LATEST_TAG"
           cd ..
-          git add authorino
 
       - name: Update version in Containerfile
-        if: steps.compare.outputs.needs_update == 'true'
+        if: steps.compare.outputs.comparison-result == '>'
         run: |
           LATEST_TAG="${{ steps.latest_version.outputs.tag }}"
           VERSION_NUM=${LATEST_TAG#v}
@@ -105,77 +79,43 @@ jobs:
           echo "Updated Containerfile.authorino version to $VERSION_NUM"
           cat Containerfile.authorino | grep "LABEL version"
 
-      - name: Check for changes
-        if: steps.compare.outputs.needs_update == 'true'
-        id: changes
-        run: |
-          if git diff --staged --quiet && git diff --quiet; then
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Commit and push changes
-        if: steps.compare.outputs.needs_update == 'true' && steps.changes.outputs.has_changes == 'true'
-        id: commit
-        run: |
-          LATEST_TAG="${{ steps.latest_version.outputs.tag }}"
-          BRANCH_NAME="auto/bump-authorino-$LATEST_TAG"
-          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
-
-          # Create a new branch
-          git checkout -b "$BRANCH_NAME"
-
-          # Stage all changes
-          git add Containerfile.authorino authorino
-
-          # Commit changes
-          git commit -m "Bump authorino submodule to $LATEST_TAG
-
-          This automated update bumps the authorino submodule to $LATEST_TAG
-          and updates the version in Containerfile.authorino accordingly.
-
-          Updated files:
-          - authorino submodule -> $LATEST_TAG
-          - Containerfile.authorino version label
-
-          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-
-          # Push branch
-          git push origin "$BRANCH_NAME"
-
-          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "base_branch=$DEFAULT_BRANCH" >> $GITHUB_OUTPUT
-
       - name: Create Pull Request
-        if: steps.compare.outputs.needs_update == 'true' && steps.changes.outputs.has_changes == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          LATEST_TAG="${{ steps.latest_version.outputs.tag }}"
-          CURRENT_TAG="${{ steps.current_version.outputs.tag }}"
-          BRANCH_NAME="${{ steps.commit.outputs.branch }}"
-          BASE_BRANCH="${{ steps.commit.outputs.base_branch }}"
+        if: steps.compare.outputs.comparison-result == '>'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: |
+            Bump authorino submodule to ${{ steps.latest_version.outputs.tag }}
 
-          gh pr create \
-            --title "chore: Bump authorino to $LATEST_TAG" \
-            --body "## Summary
+            This automated update bumps the authorino submodule to ${{ steps.latest_version.outputs.tag }}
+            and updates the version in Containerfile.authorino accordingly.
 
-          This automated PR bumps the authorino submodule from \`$CURRENT_TAG\` to \`$LATEST_TAG\`.
+            Updated files:
+            - authorino submodule -> ${{ steps.latest_version.outputs.tag }}
+            - Containerfile.authorino version label
+          branch: auto/bump-authorino-${{ steps.latest_version.outputs.tag }}
+          delete-branch: true
+          title: 'chore: Bump authorino to ${{ steps.latest_version.outputs.tag }}'
+          body: |
+            ## Summary
 
-          ## Changes
-          - Updated authorino submodule to tag $LATEST_TAG
-          - Updated version in \`Containerfile.authorino\` to match
+            This automated PR bumps the authorino submodule from `${{ steps.current_version.outputs.tag }}` to `${{ steps.latest_version.outputs.tag }}`.
 
-          ## Testing
-          - [ ] Verify the submodule points to the correct tag
-          - [ ] Check that the Containerfile version matches the submodule tag
-          - [ ] Run build tests to ensure compatibility
+            ## Changes
+            - Updated authorino submodule to tag ${{ steps.latest_version.outputs.tag }}
+            - Updated version in `Containerfile.authorino` to match
 
-          ---
-          🤖 This PR was automatically created by the [submodule-version-bump workflow](.github/workflows/submodule-version-bump.yaml)" \
-            --base "$BASE_BRANCH" \
-            --head "$BRANCH_NAME"
+            ## Testing
+            - [ ] Verify the submodule points to the correct tag
+            - [ ] Check that the Containerfile version matches the submodule tag
+            - [ ] Run build tests to ensure compatibility
+
+            ---
+            🤖 This PR was automatically created by the [submodule-version-bump workflow](.github/workflows/submodule-version-bump.yaml)
+          labels: |
+            automated
+            dependencies
+          draft: false
 
       - name: Summary
         if: always()
@@ -183,7 +123,9 @@ jobs:
           echo "## Version Check Summary" >> $GITHUB_STEP_SUMMARY
           echo "- Current version: ${{ steps.current_version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "- Latest version: ${{ steps.latest_version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Update needed: ${{ steps.compare.outputs.needs_update }}" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.compare.outputs.needs_update }}" = "true" ]; then
+          echo "- Comparison: ${{ steps.compare.outputs.comparison-result }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.compare.outputs.comparison-result }}" = ">" ]; then
             echo "- PR created: ✅" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- No update needed" >> $GITHUB_STEP_SUMMARY
           fi
