@@ -24,14 +24,14 @@ jobs:
 
       - name: Fetch all tags from submodule
         run: |
-          cd authorino-test
+          cd authorino
           git fetch --tags origin
           cd ..
 
       - name: Get current submodule version
         id: current_version
         run: |
-          cd authorino-test
+          cd authorino
           CURRENT_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "")
           if [ -z "$CURRENT_TAG" ]; then
             # If not on a tag, get the closest tag
@@ -44,7 +44,7 @@ jobs:
       - name: Get latest semver tag from submodule
         id: latest_version
         run: |
-          cd authorino-test
+          cd authorino
           # Get all tags matching semver pattern (vX.Y.Z)
           LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n 1)
           echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
@@ -63,7 +63,7 @@ jobs:
         run: |
           LATEST_TAG="${{ steps.latest_version.outputs.tag }}"
           echo "Updating from ${{ steps.current_version.outputs.tag }} to $LATEST_TAG"
-          cd authorino-test
+          cd authorino
           git fetch --tags
           git checkout "$LATEST_TAG"
           cd ..
