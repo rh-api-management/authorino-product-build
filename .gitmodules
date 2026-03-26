@@ -2,3 +2,6 @@
 	path = authorino
 	url = https://github.com/Kuadrant/authorino
 	branch = main
+[submodule "authorino-test"]
+	path = authorino-test
+	url = https://www.github.com/kuadrant-labs/authorino.git
