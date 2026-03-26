@@ -63,7 +63,8 @@ jobs:
         run: |
           LATEST_TAG="${{ steps.latest_version.outputs.tag }}"
           echo "Updating from ${{ steps.current_version.outputs.tag }} to $LATEST_TAG"
-          cd authorino
+          cd authorino-test
+          git fetch --tags
           git checkout "$LATEST_TAG"
           cd ..
 
