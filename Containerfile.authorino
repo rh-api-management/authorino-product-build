@@ -11,7 +11,7 @@ ARG git_sha
 ENV git_sha=${git_sha:-unknown}
 ARG dirty
 ENV dirty=${dirty:-unknown}
-RUN CGO_ENABLED=0 GO111MODULE=on go build -a -ldflags "-X main.version=${version} -X main.gitSHA=${git_sha} -X main.dirty=${dirty}" -o /usr/bin/authorino main.go
+RUN CGO_ENABLED=1 GOEXPERIMENT=strictfipsruntime GO111MODULE=on go build -a -tags strictfipsruntime -ldflags "-X main.version=${version} -X main.gitSHA=${git_sha} -X main.dirty=${dirty}" -o /usr/bin/authorino main.go
 
 FROM registry.redhat.io/ubi9-minimal:latest
 
